@@ -265,11 +265,10 @@ func (s *Scheduler) Solve(ctx context.Context, pods []*corev1.Pod) Results {
 }
 
 func (s *Scheduler) add(ctx context.Context, pod *corev1.Pod) error {
-	log := log.FromContext(ctx).WithValues("Pod", klog.KObj(pod))
 	// first try to schedule against an in-flight real node
 	for _, node := range s.existingNodes {
 		if err := node.Add(ctx, s.kubeClient, pod, s.cachedPodRequests[pod.UID]); err == nil {
-			log.V(1).Info("Scheduled on existing node")
+			log.FromContext(ctx).WithValues("Pod", klog.KObj(pod)).Info("Scheduled on existing node")
 			return nil
 		}
 	}
@@ -280,7 +279,7 @@ func (s *Scheduler) add(ctx context.Context, pod *corev1.Pod) error {
 	// Pick existing node that we are about to create
 	for _, nodeClaim := range s.newNodeClaims {
 		if err := nodeClaim.Add(pod, s.cachedPodRequests[pod.UID]); err == nil {
-			log.V(1).Info("Scheduled on in-progress nodeClaim")
+			log.FromContext(ctx).WithValues("Pod", klog.KObj(pod)).Info("Scheduled on in-progress nodeClaim")
 			return nil
 		}
 	}
@@ -288,25 +287,24 @@ func (s *Scheduler) add(ctx context.Context, pod *corev1.Pod) error {
 	// Create new node
 	var errs error
 	for _, nodeClaimTemplate := range s.nodeClaimTemplates {
-		log := log.WithValues("NodePool", klog.KRef("", nodeClaimTemplate.NodePoolName))
 		instanceTypes := nodeClaimTemplate.InstanceTypeOptions
 		// if limits have been applied to the nodepool, ensure we filter instance types to avoid violating those limits
 		if remaining, ok := s.remainingResources[nodeClaimTemplate.NodePoolName]; ok {
-			log.V(1).Info("Filtering instance types based on remaining resources", "Remaining", resources.String(remaining))
+			log.FromContext(ctx).WithValues("NodePool", klog.KRef("", nodeClaimTemplate.NodePoolName)).Info("Filtering instance types based on remaining resources", "Remaining", resources.String(remaining))
 			instanceTypes = filterByRemainingResources(ctx, nodeClaimTemplate.NodePoolName, instanceTypes, remaining)
 			if len(instanceTypes) == 0 {
-				log.V(1).Info("All instance types exceed resource limits for nodepool")
+				log.FromContext(ctx).WithValues("NodePool", klog.KRef("", nodeClaimTemplate.NodePoolName)).Info("All instance types exceed resource limits for nodepool")
 				errs = multierr.Append(errs, fmt.Errorf("all available instance types exceed limits for nodepool: %q", nodeClaimTemplate.NodePoolName))
 				continue
 			} else if len(nodeClaimTemplate.InstanceTypeOptions) != len(instanceTypes) {
-				log.V(1).WithValues("NodePool", nodeClaimTemplate.NodePoolName).Info(fmt.Sprintf("%d out of %d instance types were excluded because they would breach limits",
+				log.FromContext(ctx).WithValues("NodePool", klog.KRef("", nodeClaimTemplate.NodePoolName)).Info(fmt.Sprintf("%d out of %d instance types were excluded because they would breach limits",
 					len(nodeClaimTemplate.InstanceTypeOptions)-len(instanceTypes), len(nodeClaimTemplate.InstanceTypeOptions)))
 			}
 		}
 		nodeClaim := NewNodeClaim(nodeClaimTemplate, s.topology, s.daemonOverhead[nodeClaimTemplate], instanceTypes)
 		if err := nodeClaim.Add(pod, s.cachedPodRequests[pod.UID]); err != nil {
 			nodeClaim.Destroy() // Ensure we cleanup any changes that we made while mocking out a NodeClaim
-			log.V(1).Info("NodeClaim rejected pod due to incompatibility", "Error", err)
+			log.FromContext(ctx).WithValues("NodePool", klog.KRef("", nodeClaimTemplate.NodePoolName)).Info("NodeClaim rejected pod due to incompatibility", "Error", err)
 			errs = multierr.Append(errs, fmt.Errorf("incompatible with nodepool %q, daemonset overhead=%s, %w",
 				nodeClaimTemplate.NodePoolName,
 				resources.String(s.daemonOverhead[nodeClaimTemplate]),
@@ -314,12 +312,12 @@ func (s *Scheduler) add(ctx context.Context, pod *corev1.Pod) error {
 			continue
 		}
 		// we will launch this nodeClaim and need to track its maximum possible resource usage against our remaining resources
-		log.V(1).Info("NodeClaim created and pod assigned")
+		log.FromContext(ctx).WithValues("NodePool", klog.KRef("", nodeClaimTemplate.NodePoolName)).Info("NodeClaim created and pod assigned")
 		s.newNodeClaims = append(s.newNodeClaims, nodeClaim)
 		s.remainingResources[nodeClaimTemplate.NodePoolName] = subtractMax(s.remainingResources[nodeClaimTemplate.NodePoolName], nodeClaim.InstanceTypeOptions)
 		return nil
 	}
-	log.V(1).Info("Could not schedule pod on any existing or new nodeClaim")
+	log.FromContext(ctx).WithValues("Pod", klog.KObj(pod)).Info("Could not schedule pod on any existing or new nodeClaim")
 	return errs
 }
 
@@ -406,7 +404,6 @@ func subtractMax(remaining corev1.ResourceList, instanceTypes []*cloudprovider.I
 // filterByRemainingResources is used to filter out instance types that if launched would exceed the nodepool limits
 func filterByRemainingResources(ctx context.Context, nodePoolName string, instanceTypes []*cloudprovider.InstanceType, remaining corev1.ResourceList) []*cloudprovider.InstanceType {
 	var filtered []*cloudprovider.InstanceType
-	log := log.FromContext(ctx).WithValues("NodePool", nodePoolName)
 	for _, it := range instanceTypes {
 		itResources := it.Capacity
 		viableInstance := true
@@ -415,7 +412,7 @@ func filterByRemainingResources(ctx context.Context, nodePoolName string, instan
 			// if the instance capacity is greater than the remaining quantity for this resource
 			if resources.Cmp(instanceQuantity, remainingQuantity) > 0 {
 				viableInstance = false
-				log.V(1).WithValues(
+				log.FromContext(ctx).WithValues(
 					"InstanceType", it.Name,
 					"Resource", resourceName.String(),
 					"InstanceCapacity", instanceQuantity.String(),
@@ -425,11 +422,11 @@ func filterByRemainingResources(ctx context.Context, nodePoolName string, instan
 			}
 		}
 		if viableInstance {
-			log.V(1).WithValues("InstanceType", it.Name).Info("Instance type passed resource filtering")
+			log.FromContext(ctx).WithValues("InstanceType", it.Name).Info("Instance type passed resource filtering")
 			filtered = append(filtered, it)
 		}
 	}
-	log.V(1).WithValues(
+	log.FromContext(ctx).WithValues(
 		"InputCount", len(instanceTypes),
 		"FilteredCount", len(filtered),
 	).Info("Completed filtering instance types by remaining resources")
