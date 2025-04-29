@@ -299,7 +299,7 @@ func (s *Scheduler) add(ctx context.Context, pod *corev1.Pod) error {
 				errs = multierr.Append(errs, fmt.Errorf("all available instance types exceed limits for nodepool: %q", nodeClaimTemplate.NodePoolName))
 				continue
 			} else if len(nodeClaimTemplate.InstanceTypeOptions) != len(instanceTypes) {
-				log.FromContext(ctx).V(1).WithValues("NodePool", klog.KRef("", nodeClaimTemplate.NodePoolName)).Info(fmt.Sprintf("%d out of %d instance types were excluded because they would breach limits",
+				log.V(1).WithValues("NodePool", nodeClaimTemplate.NodePoolName).Info(fmt.Sprintf("%d out of %d instance types were excluded because they would breach limits",
 					len(nodeClaimTemplate.InstanceTypeOptions)-len(instanceTypes), len(nodeClaimTemplate.InstanceTypeOptions)))
 			}
 		}
