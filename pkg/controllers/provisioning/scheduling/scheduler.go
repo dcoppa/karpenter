@@ -411,18 +411,24 @@ func filterByRemainingResources(ctx context.Context, nodePoolName string, instan
 			instanceQuantity := itResources[resourceName]
 			// if the instance capacity is greater than the remaining quantity for this resource
 			if resources.Cmp(instanceQuantity, remainingQuantity) > 0 {
-				viableInstance = false
 				log.FromContext(ctx).WithValues(
 					"InstanceType", it.Name,
 					"Resource", resourceName.String(),
 					"InstanceCapacity", instanceQuantity.String(),
 					"RemainingAllowed", remainingQuantity.String(),
-				).Info("Excluding instance type: exceeds remaining resource limit")
+				).Info("Excluding instance type: exceeds remaining resource limits")
 				viableInstance = false
+			} else {
+				log.FromContext(ctx).WithValues(
+					"InstanceType", it.Name,
+					"Resource", resourceName.String(),
+					"InstanceCapacity", instanceQuantity.String(),
+					"RemainingAllowed", remainingQuantity.String(),
+				).Info("Including instance type: fits within remaining resource limits")
+				viableInstance = true
 			}
 		}
 		if viableInstance {
-			log.FromContext(ctx).WithValues("InstanceType", it.Name).Info("Instance type passed resource filtering")
 			filtered = append(filtered, it)
 		}
 	}
