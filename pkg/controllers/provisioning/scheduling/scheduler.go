@@ -436,8 +436,8 @@ func filterByRemainingResources(ctx context.Context, nodePoolName string, instan
 	}
 	log.FromContext(ctx).WithValues(
 		"NodePool", nodePoolName,
-		"InstanceTypeCount", len(instanceTypes),
-		"FilteredCount", len(filtered),
+		"InstanceCount", len(instanceTypes),
+		"ViableInstanceCount", len(filtered),
 	).Info("Completed filtering instance types by remaining resources")
 	return filtered
 }
